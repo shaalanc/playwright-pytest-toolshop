@@ -1,0 +1,54 @@
+# GitLab CI mirror of .github/workflows/ci.yml — same two gates (lint, API suite),
+# GitLab syntax. Needs a runner with network egress to the public Toolshop API;
+# if your runner can't reach it, point API_BASE_URL (see utils/config.py) at a
+# local instance instead.
+
+stages:
+  - lint
+  - test
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  PLAYWRIGHT_BROWSERS_PATH: "$CI_PROJECT_DIR/.cache/ms-playwright"
+
+.python_base:
+  image: python:3.11-slim
+  cache:
+    key:
+      files:
+        - requirements.txt
+    paths:
+      - .cache/pip
+  before_script:
+    - pip install -r requirements.txt
+
+lint:
+  extends: .python_base
+  stage: lint
+  script:
+    - ruff check .
+    - black --check .
+
+api:
+  extends: .python_base
+  stage: test
+  needs: ["lint"]
+  cache:
+    - key:
+        files:
+          - requirements.txt
+      paths:
+        - .cache/pip
+    - key: playwright-chromium
+      paths:
+        - .cache/ms-playwright
+  before_script:
+    - pip install -r requirements.txt
+    - python -m playwright install --with-deps chromium
+  script:
+    - pytest tests/api -n auto --reruns 1 --reruns-delay 3 --html=report.html --self-contained-html
+  artifacts:
+    when: always
+    paths:
+      - report.html
+    expire_in: 14 days
